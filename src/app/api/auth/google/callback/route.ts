@@ -1,12 +1,10 @@
-import { getDb } from '@/db';
-import { usersTable } from '@/db/auth.schema';
 import {
 	getGoogleOAuthConfig,
 	googleOAuthStateCookie,
 } from '@/features/auth/services/google-oauth';
-import { generateRefreshToken } from '@/utils/token';
-import { and, eq, isNull, or, sql } from 'drizzle-orm';
+import { createSocialSession } from '@/features/auth/services/social-auth.service';
 import { timingSafeEqual } from 'node:crypto';
+import axios from 'axios';
 import { NextResponse, type NextRequest } from 'next/server';
 
 interface GoogleProfile {
@@ -20,21 +18,16 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 	typeof value === 'object' && value !== null;
 
 const getProfile = async (accessToken: string): Promise<GoogleProfile> => {
-	const response = await fetch(
+	const response = await axios.get<unknown>(
 		'https://openidconnect.googleapis.com/v1/userinfo',
 		{
-			headers: { Authorization: `Bearer ${accessToken}` },
-			cache: 'no-store',
+			headers: {
+				Authorization: `Bearer ${accessToken}`,
+				'Cache-Control': 'no-store',
+			},
 		},
 	);
-
-	if (!response.ok) {
-		throw new Error(
-			`Google profile request failed with status ${response.status}.`,
-		);
-	}
-
-	const result: unknown = await response.json();
+	const result = response.data;
 	if (
 		!isRecord(result) ||
 		typeof result.sub !== 'string' ||
@@ -53,123 +46,6 @@ const getProfile = async (accessToken: string): Promise<GoogleProfile> => {
 		familyName:
 			typeof result.family_name === 'string' ? result.family_name : null,
 	};
-};
-
-const createSession = async (profile: GoogleProfile) => {
-	const db = getDb();
-
-	return db.transaction(async (tx) => {
-		let [user] = await tx
-			.select()
-			.from(usersTable)
-			.where(eq(usersTable.authId, profile.sub))
-			.limit(1);
-
-		if (!user) {
-			[user] = await tx
-				.select()
-				.from(usersTable)
-				.where(sql`LOWER(${usersTable.email}) = ${profile.email}`)
-				.limit(1);
-		}
-
-		if (user?.authId && user.authId !== profile.sub) {
-			throw new Error('This email is already linked to another social account.');
-		}
-
-		if (!user) {
-			const [createdUser] = await tx
-				.insert(usersTable)
-				.values({
-					authId: profile.sub,
-					firstName: profile.givenName || profile.email.split('@')[0] || 'User',
-					lastName: profile.familyName,
-					email: profile.email,
-					emailVerified: true,
-				})
-				.onConflictDoNothing()
-				.returning();
-
-			user = createdUser;
-		}
-
-		if (!user) {
-			[user] = await tx
-				.select()
-				.from(usersTable)
-				.where(eq(usersTable.authId, profile.sub))
-				.limit(1);
-
-			if (!user) {
-				[user] = await tx
-					.select()
-					.from(usersTable)
-					.where(sql`LOWER(${usersTable.email}) = ${profile.email}`)
-					.limit(1);
-			}
-		}
-
-		if (!user) {
-			throw new Error('Unable to create or locate the Google account.');
-		}
-		if (user.authId && user.authId !== profile.sub) {
-			throw new Error('This email is already linked to another social account.');
-		}
-
-		if (!user.authId || !user.emailVerified) {
-			const [linkedUser] = await tx
-				.update(usersTable)
-				.set({ authId: profile.sub, emailVerified: true })
-				.where(
-					and(
-						eq(usersTable.id, user.id),
-						or(
-							isNull(usersTable.authId),
-							eq(usersTable.authId, profile.sub),
-						),
-					),
-				)
-				.returning();
-
-			if (!linkedUser) {
-				throw new Error('This email is already linked to another social account.');
-			}
-			user = linkedUser;
-		}
-
-		const refreshToken = await generateRefreshToken({
-			id: user.id,
-			role: user.role,
-		});
-
-		const [sessionUser] = await tx
-			.update(usersTable)
-			.set({ refreshToken })
-			.where(eq(usersTable.id, user.id))
-			.returning({
-				id: usersTable.id,
-				firstName: usersTable.firstName,
-				lastName: usersTable.lastName,
-				email: usersTable.email,
-				role: usersTable.role,
-				emailVerified: usersTable.emailVerified,
-				planType: usersTable.planType,
-				passStatus: usersTable.passStatus,
-				passExpiryDate: usersTable.passExpiryDate,
-				monthlyTokenAllowance: usersTable.monthlyTokenAllowance,
-				tokensUsedThisMonth: usersTable.tokensUsedThisMonth,
-				tokensUsedToday: usersTable.tokensUsedToday,
-				refreshToken: usersTable.refreshToken,
-				createdAt: usersTable.createdAt,
-			});
-
-		const sessionRefreshToken = sessionUser?.refreshToken;
-		if (!sessionUser || !sessionRefreshToken) {
-			throw new Error('Unable to create the Google sign-in session.');
-		}
-
-		return { ...sessionUser, refreshToken: sessionRefreshToken };
-	});
 };
 
 const failedSignIn = (request: NextRequest) => {
@@ -203,32 +79,35 @@ export const GET = async (request: NextRequest) => {
 
 	try {
 		const { clientId, clientSecret, redirectUri } = getGoogleOAuthConfig();
-		const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-			body: new URLSearchParams({
+		const tokenResponse = await axios.post<unknown>(
+			'https://oauth2.googleapis.com/token',
+			new URLSearchParams({
 				code,
 				client_id: clientId,
 				client_secret: clientSecret,
 				redirect_uri: redirectUri,
 				grant_type: 'authorization_code',
 			}),
-			cache: 'no-store',
-		});
+			{
+				headers: {
+					'Content-Type': 'application/x-www-form-urlencoded',
+					'Cache-Control': 'no-store',
+				},
+			},
+		);
 
-		if (!tokenResponse.ok) {
-			throw new Error(
-				`Google token exchange failed with status ${tokenResponse.status}.`,
-			);
-		}
-
-		const tokenResult: unknown = await tokenResponse.json();
+		const tokenResult = tokenResponse.data;
 		if (!isRecord(tokenResult) || typeof tokenResult.access_token !== 'string') {
 			throw new Error('Google did not return an access token.');
 		}
 
 		const profile = await getProfile(tokenResult.access_token);
-		const user = await createSession(profile);
+		const user = await createSocialSession({
+			authId: profile.sub,
+			email: profile.email,
+			firstName: profile.givenName || profile.email.split('@')[0] || 'User',
+			lastName: profile.familyName,
+		});
 		const response = NextResponse.redirect(
 			new URL('/oauth/google/success', request.url),
 		);

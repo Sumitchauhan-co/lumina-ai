@@ -117,7 +117,7 @@ export function useSignin() {
 	});
 }
 
-export function useCompleteGoogleSignin() {
+export function useCompleteSocialSignin() {
 	const queryClient = useQueryClient();
 	const setAuthenticated = useAuthStore((state) => state.setAuthenticated);
 	const setSubscriptionDetails = useAuthStore(

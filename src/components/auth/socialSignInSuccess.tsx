@@ -1,10 +1,10 @@
 'use client';
 
-import { useCompleteGoogleSignin } from '@/features/auth/hooks/auth';
+import { useCompleteSocialSignin } from '@/features/auth/hooks/auth';
 import { useEffect, useRef } from 'react';
 
-export default function GoogleSignInSuccess() {
-	const { mutate: completeSignin } = useCompleteGoogleSignin();
+export default function SocialSignInSuccess() {
+	const { mutate: completeSignin } = useCompleteSocialSignin();
 	const started = useRef(false);
 
 	useEffect(() => {

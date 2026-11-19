@@ -1,5 +1,5 @@
-import GoogleSignInSuccess from '@/components/auth/googleSignInSuccess';
+import SocialSignInSuccess from '@/components/auth/socialSignInSuccess';
 
 export default function GoogleSignInSuccessPage() {
-	return <GoogleSignInSuccess />;
+	return <SocialSignInSuccess />;
 }

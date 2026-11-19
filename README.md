@@ -27,6 +27,13 @@ redirect URI is `http://localhost:3000/api/auth/google/callback`; register that
 exact URI in the Google Cloud OAuth client. If the app uses another origin,
 set `GOOGLE_REDIRECT_URI` to the exact registered URI.
 
+## GitHub sign-in
+
+Set `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET` in `.env`, then register
+`http://localhost:3000/api/auth/github/callback` as the GitHub OAuth callback
+URL. For another origin, set `GITHUB_REDIRECT_URI` to the exact registered URL.
+`GITHUB_WEBHOOK_SECRET` is not used for OAuth; no webhook handler is included.
+
 ## Learn More
 
 To learn more about Next.js, take a look at the following resources:
