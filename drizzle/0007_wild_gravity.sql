@@ -1,0 +1,1 @@
+ALTER TABLE "subscriptions" ALTER COLUMN "monthly_token_allowance" SET DEFAULT 1000;

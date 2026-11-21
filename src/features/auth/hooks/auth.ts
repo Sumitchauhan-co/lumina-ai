@@ -3,14 +3,24 @@ import { useRouter } from 'next/navigation';
 import { isAxiosError } from 'axios';
 import { toast } from 'sonner';
 
-import { setAccessToken, useAuthStore } from '@/store/store';
+import {
+	type SubscriptionDetails,
+	type UserProfile,
+	useAuthStore,
+} from '@/store/store';
 import api from '@/utils/api';
 
-interface User {
-	id: string;
-	firstName: string;
-	lastName: string;
-	email: string;
+type User = UserProfile & SubscriptionDetails;
+
+interface ApiEnvelope<T> {
+	success: boolean;
+	message?: string;
+	data: T;
+}
+
+interface AuthResponse {
+	accessToken: string;
+	user: User;
 }
 
 export const authKeys = {
@@ -18,27 +28,21 @@ export const authKeys = {
 };
 
 export function useUser() {
-	const { clearAuth, setAuthenticated } = useAuthStore();
+	const { clearAuth, setAuthenticated, setSubscriptionDetails } = useAuthStore();
 
 	return useQuery<User | null>({
 		queryKey: authKeys.user,
 		queryFn: async () => {
-			try {
-				const response = await api.get('/api/auth/get-user');
-				const result = response.data?.data;
-
-				if (result) {
-					setAuthenticated(true);
-					return result;
-				}
-
-				clearAuth();
-				return null;
-			} catch (error) {
-				clearAuth();
-				console.log(error);
-				return null;
+			const response = await api.get<ApiEnvelope<User>>('/api/auth/getUser');
+			const user = response.data.data;
+			if (user) {
+				setAuthenticated(true, undefined, user);
+				setSubscriptionDetails(user);
+				return user;
 			}
+
+			clearAuth();
+			return null;
 		},
 		enabled: true,
 		retry: false,
@@ -53,8 +57,10 @@ export function useUserProfile(userId?: string) {
 			if (!userId) return null;
 
 			try {
-				const response = await api.get(`/api/auth/profile/${userId}`);
-				const result = response.data?.data?.user;
+				const response = await api.get<ApiEnvelope<{ user: User }>>(
+					`/api/auth/profile/${userId}`,
+				);
+				const result = response.data.data.user;
 
 				if (result) {
 					return result;
@@ -81,7 +87,10 @@ export function useSignin() {
 			const toastId = toast.loading('Verifying credentials...');
 
 			try {
-				const res = await api.post('/api/auth/signin', credentials);
+				const res = await api.post<ApiEnvelope<AuthResponse>>(
+					'/api/auth/signin',
+					credentials,
+				);
 				return { ...res.data, toastId };
 			} catch (error) {
 				let errorMessage = 'Authentication failed';
@@ -94,15 +103,13 @@ export function useSignin() {
 			}
 		},
 		onSuccess: (res) => {
-			const token = res?.data?.accessToken;
-			const userData = res?.data?.user;
-			const toastId = res?.toastId;
+			const { accessToken, user } = res.data;
+			const toastId = res.toastId;
 
-			if (token) setAccessToken(token);
-			setAuthenticated(true);
-			queryClient.setQueryData(authKeys.user, userData);
+			setAuthenticated(true, accessToken, user);
+			queryClient.setQueryData(authKeys.user, user);
 
-			const userFirstName = userData?.firstName || 'User';
+			const userFirstName = user.firstName || 'User';
 
 			toast.success(`Welcome back, ${userFirstName}!`, {
 				id: toastId,
@@ -128,31 +135,15 @@ export function useCompleteSocialSignin() {
 
 	return useMutation({
 		mutationFn: async () => {
-			const response = await api.post<{
-				data: {
-					accessToken: string;
-					user: {
-						planType: 'free' | 'pro';
-						passStatus: 'inactive' | 'active' | 'expired';
-						monthlyTokenAllowance: number;
-						tokensUsedThisMonth: number;
-						tokensUsedToday: number;
-					};
-				};
-			}>('/api/auth/refresh');
+			const response = await api.post<ApiEnvelope<AuthResponse>>(
+				'/api/auth/refresh',
+			);
 
 			return response.data.data;
 		},
 		onSuccess: ({ accessToken, user }) => {
-			setAccessToken(accessToken);
-			setAuthenticated(true, accessToken);
-			setSubscriptionDetails({
-				planType: user.planType,
-				passStatus: user.passStatus,
-				monthlyTokenAllowance: user.monthlyTokenAllowance,
-				tokensUsedThisMonth: user.tokensUsedThisMonth,
-				tokensUsedToday: user.tokensUsedToday,
-			});
+			setAuthenticated(true, accessToken, user);
+			setSubscriptionDetails(user);
 			queryClient.setQueryData(authKeys.user, user);
 			router.replace('/');
 		},
@@ -166,6 +157,9 @@ export function useCompleteSocialSignin() {
 export function useSignup() {
 	const queryClient = useQueryClient();
 	const setAuthenticated = useAuthStore((state) => state.setAuthenticated);
+	const setSubscriptionDetails = useAuthStore(
+		(state) => state.setSubscriptionDetails,
+	);
 	const router = useRouter();
 
 	return useMutation({
@@ -173,7 +167,10 @@ export function useSignup() {
 			const toastId = toast.loading('Creating your account...');
 
 			try {
-				const res = await api.post('/api/auth/signup', formData);
+				const res = await api.post<ApiEnvelope<AuthResponse>>(
+					'/api/auth/signup',
+					formData,
+				);
 				return { ...res.data, toastId };
 			} catch (error) {
 				let errorMessage = 'Registration failed. Try again.';
@@ -186,16 +183,12 @@ export function useSignup() {
 			}
 		},
 		onSuccess: (res) => {
-			const token = res?.data?.accessToken;
-			const userData = res?.data?.user;
-			const toastId = res?.toastId;
+			const { accessToken, user } = res.data;
+			const toastId = res.toastId;
 
-			if (token) setAccessToken(token);
-			setAuthenticated(true);
-
-			if (userData) {
-				queryClient.setQueryData(authKeys.user, userData);
-			}
+			setAuthenticated(true, accessToken, user);
+			setSubscriptionDetails(user);
+			queryClient.setQueryData(authKeys.user, user);
 
 			toast.success('Welcome to Lumina AI!', {
 				id: toastId,

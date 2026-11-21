@@ -1,20 +1,73 @@
-import { getAccessToken, setAccessToken, useAuthStore } from '@/store/store';
-import axios from 'axios';
+import axios, { type InternalAxiosRequestConfig } from 'axios';
+import {
+	getSharedAccessToken,
+	notifyAuthSessionExpired,
+	notifyAuthSessionRefreshed,
+	setSharedAccessToken,
+} from '@/utils/authSession';
 
 const api = axios.create({
 	withCredentials: true,
 });
 
+interface RefreshResult {
+	accessToken: string;
+	user: unknown;
+}
+
+const asRecord = (value: unknown): Record<string, unknown> | null =>
+	typeof value === 'object' && value !== null && !Array.isArray(value)
+		? (value as Record<string, unknown>)
+		: null;
+
+const authEndpoints = [
+	'/api/auth/signin',
+	'/api/auth/signup',
+	'/api/auth/refresh',
+	'/api/auth/signout',
+];
+type RetryableConfig = InternalAxiosRequestConfig & { _authRetry?: boolean };
+let refreshInFlight: Promise<RefreshResult> | null = null;
+
+const parseRefreshResponse = (value: unknown): RefreshResult => {
+	const envelope = asRecord(value);
+	const data = asRecord(envelope?.data) ?? envelope;
+	const accessToken = data?.accessToken;
+
+	if (typeof accessToken !== 'string' || !accessToken) {
+		throw new Error('Refresh endpoint did not return an access token');
+	}
+
+	return {
+		accessToken,
+		user: data?.user,
+	};
+};
+
+const refreshAccessToken = () => {
+	if (!refreshInFlight) {
+		const request = axios
+			.post<unknown>('/api/auth/refresh', undefined, {
+				withCredentials: true,
+			})
+			.then((response) => parseRefreshResponse(response.data));
+		refreshInFlight = request.finally(() => {
+			refreshInFlight = null;
+		});
+	}
+
+	return refreshInFlight;
+};
+
 api.interceptors.request.use((config) => {
 	if (typeof window === 'undefined') return config;
 
-	const token = getAccessToken();
-	const skipUrls = ['/api/auth/signin', '/api/auth/signup'];
-
-	if (skipUrls.some((url) => config.url?.includes(url))) {
+	const requestUrl = config.url ?? '';
+	if (authEndpoints.some((endpoint) => requestUrl.includes(endpoint))) {
 		return config;
 	}
 
+	const token = getSharedAccessToken();
 	if (token) {
 		config.headers.Authorization = `Bearer ${token}`;
 	}
@@ -23,56 +76,36 @@ api.interceptors.request.use((config) => {
 });
 
 api.interceptors.response.use(
-	(res) => res,
-	async (error) => {
-		const originalRequest = error.config;
+	(response) => response,
+	async (error: unknown) => {
+		if (!axios.isAxiosError(error)) return Promise.reject(error);
 
-		if (!originalRequest || originalRequest._retry) {
+		const originalRequest = error.config as RetryableConfig | undefined;
+		const requestUrl = originalRequest?.url ?? '';
+		if (
+			typeof window === 'undefined' ||
+			error.response?.status !== 401 ||
+			!originalRequest ||
+			authEndpoints.some((endpoint) => requestUrl.includes(endpoint)) ||
+			originalRequest._authRetry
+		) {
 			return Promise.reject(error);
 		}
 
-		const isAuthPost =
-			originalRequest.url?.includes('/api/auth/signin') ||
-			originalRequest.url?.includes('/api/auth/signup') ||
-			originalRequest.url?.includes('/api/auth/refresh');
+		originalRequest._authRetry = true;
 
-		if (error.response?.status === 401 && !isAuthPost) {
-			originalRequest._retry = true;
-
-			try {
-				const res = await axios.post(
-					`/api/auth/refresh`,
-					{},
-					{ withCredentials: true },
-				);
-
-				const newAccessToken =
-					res.data?.data?.accessToken || res.data?.accessToken;
-				const userObject = res.data?.data?.user || res.data?.user;
-
-				if (!newAccessToken && !userObject) {
-					throw new Error('No token or valid cookie session context returned.');
-				}
-
-				if (newAccessToken) {
-					setAccessToken(newAccessToken);
-					originalRequest.headers.Authorization = `Bearer ${newAccessToken}`;
-				} else {
-					setAccessToken(null);
-				}
-
-				return api(originalRequest);
-			} catch (refreshError) {
-				useAuthStore.getState().clearAuth();
-
-				if (typeof window !== 'undefined') {
-					window.dispatchEvent(new Event('lumina:auth-expired'));
-				}
-				return Promise.reject(refreshError);
-			}
+		try {
+			const refreshed = await refreshAccessToken();
+			setSharedAccessToken(refreshed.accessToken);
+			notifyAuthSessionRefreshed(refreshed.accessToken, refreshed.user);
+			originalRequest.headers.Authorization = `Bearer ${refreshed.accessToken}`;
+			return api(originalRequest);
+		} catch (refreshError) {
+			setSharedAccessToken(null);
+			notifyAuthSessionExpired();
+			window.dispatchEvent(new Event('lumina:auth-expired'));
+			return Promise.reject(refreshError);
 		}
-
-		return Promise.reject(error);
 	},
 );
 

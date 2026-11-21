@@ -1,4 +1,3 @@
-import { getTableColumns } from 'drizzle-orm';
 import {
 	boolean,
 	integer,
@@ -67,17 +66,13 @@ export const usersTable = pgTable('users', {
 	}),
 	// ==========================================================
 
-	// ================= TOKEN USAGE & PACING (5X BURST CAP) ===
+	// ================= TOKEN USAGE ============================
 	monthlyTokenAllowance: integer('monthly_token_allowance')
-		.default(1000000)
+		.default(1000)
 		.notNull(),
 	tokensUsedThisMonth: integer('tokens_used_this_month').default(0).notNull(),
-	tokensUsedToday: integer('tokens_used_today').default(0).notNull(),
 
 	lastMonthlyReset: timestamp('last_monthly_reset', { withTimezone: true })
-		.defaultNow()
-		.notNull(),
-	lastDailyReset: timestamp('last_daily_reset', { withTimezone: true })
 		.defaultNow()
 		.notNull(),
 	// ==========================================================
@@ -91,5 +86,20 @@ export const usersTable = pgTable('users', {
 });
 
 // ==================== PUBLIC COLUMNS EXPORT ====================
-const { password: _, ...publicColumns } = getTableColumns(usersTable);
-export const userPublicColumns = publicColumns;
+export const userPublicColumns = {
+	id: usersTable.id,
+	firstName: usersTable.firstName,
+	lastName: usersTable.lastName,
+	email: usersTable.email,
+	emailVerified: usersTable.emailVerified,
+	role: usersTable.role,
+	lastOrderId: usersTable.lastOrderId,
+	planType: usersTable.planType,
+	passStatus: usersTable.passStatus,
+	passExpiryDate: usersTable.passExpiryDate,
+	monthlyTokenAllowance: usersTable.monthlyTokenAllowance,
+	tokensUsedThisMonth: usersTable.tokensUsedThisMonth,
+	lastMonthlyReset: usersTable.lastMonthlyReset,
+	createdAt: usersTable.createdAt,
+	updatedAt: usersTable.updatedAt,
+};

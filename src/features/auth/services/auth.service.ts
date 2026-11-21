@@ -1,7 +1,7 @@
 import { getDb } from '@/db';
 import { userPublicColumns, usersTable } from '@/db/auth.schema';
 import ApiError from '@/utils/apiError';
-import { and, eq, gt, sql } from 'drizzle-orm';
+import { and, eq, gt, or, sql } from 'drizzle-orm';
 import nodemailer from 'nodemailer';
 import {
 	compareUserPassword,
@@ -10,22 +10,32 @@ import {
 	generateHashPassword,
 	generateRefreshToken,
 	generateToken,
+	hashRefreshToken,
 	verifyRefreshToken,
 } from '@/utils/token';
 import { UserRole } from '../models/auth.model';
 import { getTransporter } from '@/utils/mail';
 
+const configuredRefreshCookieAge = Number(
+	process.env.REFRESH_TOKEN_MAX_AGE_SECONDS,
+);
+
 export const cookieOptions = {
 	httpOnly: true,
 	secure: process.env.NODE_ENV === 'production',
-	sameSite: 'strict' as const,
+	sameSite: 'lax' as const,
 	path: '/',
+	maxAge:
+		Number.isSafeInteger(configuredRefreshCookieAge) &&
+		configuredRefreshCookieAge > 0
+			? configuredRefreshCookieAge
+			: 7 * 24 * 60 * 60,
 };
 
 type UserRecord = typeof usersTable.$inferSelect;
 
 /**
- * Helper to check and reset token counters if 30 days (monthly) or 24 hours (daily) have elapsed.
+ * Reset the monthly token counter after its rolling 30-day window.
  */
 async function checkAndResetUserQuotas(
 	db: ReturnType<typeof getDb>,
@@ -35,13 +45,10 @@ async function checkAndResetUserQuotas(
 	const now = new Date();
 
 	const lastMonthly = new Date(user.lastMonthlyReset);
-	const lastDaily = new Date(user.lastDailyReset);
 
 	const diffTimeMonthly = now.getTime() - lastMonthly.getTime();
 	const diffDaysMonthly = diffTimeMonthly / (1000 * 3600 * 24);
 
-	const diffTimeDaily = now.getTime() - lastDaily.getTime();
-	const diffHoursDaily = diffTimeDaily / (1000 * 3600);
 
 	// Use a typed partial record object instead of `any` and `let`
 	const updateFields: Partial<typeof usersTable.$inferInsert> = {};
@@ -50,12 +57,6 @@ async function checkAndResetUserQuotas(
 	if (diffDaysMonthly >= 30) {
 		updateFields.tokensUsedThisMonth = 0;
 		updateFields.lastMonthlyReset = now;
-	}
-
-	// Reset daily counters if 24+ hours have passed
-	if (diffHoursDaily >= 24) {
-		updateFields.tokensUsedToday = 0;
-		updateFields.lastDailyReset = now;
 	}
 
 	if (Object.keys(updateFields).length > 0) {
@@ -109,19 +110,9 @@ export const signupService = async ({
 				password: hashedPassword,
 				planType: 'free',
 				passStatus: 'inactive',
-				monthlyTokenAllowance: 1000000, // 1M tokens default pool
+				monthlyTokenAllowance: 1000,
 			})
-			.returning({
-				id: usersTable.id,
-				firstName: usersTable.firstName,
-				lastName: usersTable.lastName,
-				email: usersTable.email,
-				emailVerified: usersTable.emailVerified,
-				role: usersTable.role,
-				planType: usersTable.planType,
-				passStatus: usersTable.passStatus,
-				createdAt: usersTable.createdAt,
-			});
+			.returning(userPublicColumns);
 
 		if (!user) {
 			throw ApiError.badRequest('Failed to create a user');
@@ -131,6 +122,7 @@ export const signupService = async ({
 			id: user.id,
 			role: user.role,
 		});
+		const hashedRefreshToken = hashRefreshToken(refreshToken);
 		const accessToken = await generateAccessToken({
 			id: user.id,
 			role: user.role,
@@ -158,10 +150,13 @@ export const signupService = async ({
 
 		await tx
 			.update(usersTable)
-			.set({ refreshToken, verificationToken: hashedToken })
+			.set({
+				refreshToken: hashedRefreshToken,
+				verificationToken: hashedToken,
+			})
 			.where(eq(usersTable.id, user.id));
 
-		return { user: { ...user, refreshToken }, accessToken };
+		return { user, accessToken, refreshToken };
 	});
 };
 
@@ -202,6 +197,7 @@ export const signinService = async ({
 		id: user.id,
 		role: user.role,
 	});
+	const hashedRefreshToken = hashRefreshToken(refreshToken);
 	const accessToken = await generateAccessToken({
 		id: user.id,
 		role: user.role,
@@ -209,61 +205,65 @@ export const signinService = async ({
 
 	const [updatedUser] = await db
 		.update(usersTable)
-		.set({ refreshToken })
+		.set({ refreshToken: hashedRefreshToken })
 		.where(eq(usersTable.id, user.id))
-		.returning({
-			id: usersTable.id,
-			firstName: usersTable.firstName,
-			lastName: usersTable.lastName,
-			email: usersTable.email,
-			role: usersTable.role,
-			emailVerified: usersTable.emailVerified,
-			planType: usersTable.planType,
-			passStatus: usersTable.passStatus,
-			passExpiryDate: usersTable.passExpiryDate,
-			monthlyTokenAllowance: usersTable.monthlyTokenAllowance,
-			tokensUsedThisMonth: usersTable.tokensUsedThisMonth,
-			tokensUsedToday: usersTable.tokensUsedToday,
-			refreshToken: usersTable.refreshToken,
-			createdAt: usersTable.createdAt,
-		});
+		.returning(userPublicColumns);
 
 	if (!updatedUser) {
 		throw ApiError.badRequest('Failed to update user session');
 	}
 
-	return { user: updatedUser, accessToken };
+	return { user: updatedUser, accessToken, refreshToken };
 };
 
-export const signoutService = async (user: { id: string; role: string }) => {
-	const db = getDb();
+export const signoutService = async (refreshToken?: string) => {
+	if (!refreshToken) return;
 
+	const db = getDb();
+	const hashedRefreshToken = hashRefreshToken(refreshToken);
 	await db
 		.update(usersTable)
 		.set({ refreshToken: null })
-		.where(eq(usersTable.id, user.id));
+		.where(
+			or(
+				eq(usersTable.refreshToken, hashedRefreshToken),
+				eq(usersTable.refreshToken, refreshToken),
+			),
+		);
 };
 
 export const refreshService = async (refreshToken: string) => {
-	const decoded = (await verifyRefreshToken(refreshToken)) as {
-		id: string;
-		role: string;
-	};
-
-	if (!decoded || !decoded.id) {
-		throw ApiError.unauthorized('Invalid refresh token');
+	let decoded: Awaited<ReturnType<typeof verifyRefreshToken>>;
+	try {
+		decoded = await verifyRefreshToken(refreshToken);
+	} catch (error) {
+		if (
+			error instanceof Error &&
+			['JsonWebTokenError', 'TokenExpiredError', 'NotBeforeError'].includes(
+				error.name,
+			)
+		) {
+			throw ApiError.unauthorized('Invalid or expired refresh token');
+		}
+		throw error;
 	}
 
 	const db = getDb();
-
 	let [user] = await db
 		.select()
 		.from(usersTable)
 		.where(eq(usersTable.id, decoded.id));
 
-	if (!user || user.refreshToken !== refreshToken) {
+	const hashedRefreshToken = hashRefreshToken(refreshToken);
+	if (
+		!user ||
+		!user.refreshToken ||
+		(user.refreshToken !== hashedRefreshToken &&
+			user.refreshToken !== refreshToken)
+	) {
 		throw ApiError.unauthorized('Token is invalid or has been revoked');
 	}
+	const storedRefreshToken = user.refreshToken;
 
 	// Check and perform quota resets if period elapsed
 	user = await checkAndResetUserQuotas(db, user.id, user);
@@ -277,29 +277,24 @@ export const refreshService = async (refreshToken: string) => {
 		id: user.id,
 		role: user.role,
 	});
+	const hashedNewRefreshToken = hashRefreshToken(newRefreshToken);
 
 	const [updatedUser] = await db
 		.update(usersTable)
-		.set({ refreshToken: newRefreshToken })
-		.where(eq(usersTable.id, user.id))
-		.returning({
-			id: usersTable.id,
-			firstName: usersTable.firstName,
-			lastName: usersTable.lastName,
-			email: usersTable.email,
-			role: usersTable.role,
-			emailVerified: usersTable.emailVerified,
-			planType: usersTable.planType,
-			passStatus: usersTable.passStatus,
-			passExpiryDate: usersTable.passExpiryDate,
-			monthlyTokenAllowance: usersTable.monthlyTokenAllowance,
-			tokensUsedThisMonth: usersTable.tokensUsedThisMonth,
-			tokensUsedToday: usersTable.tokensUsedToday,
-			refreshToken: usersTable.refreshToken,
-			createdAt: usersTable.createdAt,
-		});
+		.set({ refreshToken: hashedNewRefreshToken })
+		.where(
+			and(
+				eq(usersTable.id, user.id),
+				eq(usersTable.refreshToken, storedRefreshToken),
+			),
+		)
+		.returning(userPublicColumns);
 
-	return { user: updatedUser, accessToken };
+	if (!updatedUser) {
+		throw ApiError.unauthorized('Refresh token has already been rotated');
+	}
+
+	return { user: updatedUser, accessToken, refreshToken: newRefreshToken };
 };
 
 export const profileService = async (userId: string) => {
@@ -317,14 +312,12 @@ export const profileService = async (userId: string) => {
 	// Check and perform quota resets
 	user = await checkAndResetUserQuotas(db, user.id, user);
 
-	// Strip password and sensitive token columns before returning
-	const {
-		password: _,
-		refreshToken: __,
-		verificationToken: ___,
-		resetPasswordToken: ____,
-		...safeUser
-	} = user;
+	const [safeUser] = await db
+		.select(userPublicColumns)
+		.from(usersTable)
+		.where(eq(usersTable.id, userId))
+		.limit(1);
+	if (!safeUser) throw ApiError.notFound('User not found');
 	return safeUser;
 };
 
@@ -408,7 +401,7 @@ export const resetPasswordService = async ({
 			resetPasswordExpiry: null,
 		})
 		.where(eq(usersTable.id, user.id))
-		.returning();
+		.returning(userPublicColumns);
 
 	return updatedUser;
 };
@@ -424,7 +417,7 @@ export const verifyEmailService = async (token: string) => {
 			verificationToken: null,
 		})
 		.where(eq(usersTable.verificationToken, hashToken))
-		.returning();
+		.returning(userPublicColumns);
 
 	if (!updatedUser) {
 		throw ApiError.notFound('Invalid or expired verification token');
@@ -448,12 +441,11 @@ export const getUserService = async (userId: string) => {
 	// Check and perform quota resets
 	result = await checkAndResetUserQuotas(db, result.id, result);
 
-	const {
-		password: _,
-		refreshToken: __,
-		verificationToken: ___,
-		resetPasswordToken: ____,
-		...safeUser
-	} = result;
+	const [safeUser] = await db
+		.select(userPublicColumns)
+		.from(usersTable)
+		.where(eq(usersTable.id, userId))
+		.limit(1);
+	if (!safeUser) throw ApiError.notFound('User not found');
 	return safeUser;
 };

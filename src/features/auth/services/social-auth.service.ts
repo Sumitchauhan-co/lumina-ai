@@ -1,6 +1,6 @@
 import { getDb } from '@/db';
-import { usersTable } from '@/db/auth.schema';
-import { generateRefreshToken } from '@/utils/token';
+import { userPublicColumns, usersTable } from '@/db/auth.schema';
+import { generateRefreshToken, hashRefreshToken } from '@/utils/token';
 import { and, eq, isNull, or, sql } from 'drizzle-orm';
 
 interface SocialProfile {
@@ -108,33 +108,18 @@ export const createSocialSession = async (profile: SocialProfile) => {
 			id: user.id,
 			role: user.role,
 		});
+		const hashedRefreshToken = hashRefreshToken(refreshToken);
 
 		const [sessionUser] = await tx
 			.update(usersTable)
-			.set({ refreshToken })
+			.set({ refreshToken: hashedRefreshToken })
 			.where(eq(usersTable.id, user.id))
-			.returning({
-				id: usersTable.id,
-				firstName: usersTable.firstName,
-				lastName: usersTable.lastName,
-				email: usersTable.email,
-				role: usersTable.role,
-				emailVerified: usersTable.emailVerified,
-				planType: usersTable.planType,
-				passStatus: usersTable.passStatus,
-				passExpiryDate: usersTable.passExpiryDate,
-				monthlyTokenAllowance: usersTable.monthlyTokenAllowance,
-				tokensUsedThisMonth: usersTable.tokensUsedThisMonth,
-				tokensUsedToday: usersTable.tokensUsedToday,
-				refreshToken: usersTable.refreshToken,
-				createdAt: usersTable.createdAt,
-			});
+			.returning(userPublicColumns);
 
-		const sessionRefreshToken = sessionUser?.refreshToken;
-		if (!sessionUser || !sessionRefreshToken) {
+		if (!sessionUser) {
 			throw new Error('Unable to create the social sign-in session.');
 		}
 
-		return { ...sessionUser, refreshToken: sessionRefreshToken };
+		return { user: sessionUser, refreshToken };
 	});
 };

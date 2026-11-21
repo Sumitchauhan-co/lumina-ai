@@ -15,7 +15,7 @@ export default function SocialSignInSuccess() {
 
 	return (
 		<main
-			className="flex min-h-screen items-center justify-center bg-[#09090b] text-zinc-400"
+			className="flex min-h-screen items-center justify-center bg-background text-muted-foreground"
 			aria-live="polite"
 		>
 			Completing Google sign-in…

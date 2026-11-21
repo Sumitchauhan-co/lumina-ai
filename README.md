@@ -34,6 +34,43 @@ Set `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET` in `.env`, then register
 URL. For another origin, set `GITHUB_REDIRECT_URI` to the exact registered URL.
 `GITHUB_WEBHOOK_SECRET` is not used for OAuth; no webhook handler is included.
 
+## Chat and Pro billing
+
+Configure the backend environment:
+
+- `OPENROUTER_API_KEY`
+- Free chat is limited to `openai/gpt-4o-mini`; Pro adds `openai/gpt-4o`.
+- `RAZORPAY_KEY_ID`
+- `RAZORPAY_KEY_SECRET`
+- `RAZORPAY_WEBHOOK_SECRET`
+- `RAZORPAY_PRO_PLAN_ID`
+- `PRO_MONTHLY_TOKEN_ALLOWANCE` (optional; defaults to `100000`)
+- `PRO_MONTHLY_PRICE_PAISE` (optional; defaults to `39900` for INR 399)
+
+Keep Razorpay test credentials and live credentials in their respective
+deployment environments; do not mix the key ID, key secret, plan ID, and
+webhook secret across modes. Create a Razorpay plan for INR 399 billed monthly,
+then set its ID in `RAZORPAY_PRO_PLAN_ID`. Configure Razorpay to deliver
+subscription events to `/api/razorpay/webhook` on the deployed host, using the
+same signing secret in `RAZORPAY_WEBHOOK_SECRET`.
+
+The chat and conversation endpoints require the existing Bearer access token.
+`POST /api/chat` returns Server-Sent Events: `meta` includes the conversation
+ID and model, `delta` carries generated text, and `done` includes final token
+usage and quota. The `error` event indicates a failure after streaming starts.
+Use `GET /api/chat/quota` for current usage and limits.
+
+The billing API is rooted at `/api/billing` (`status`, `checkout`, `verify`,
+and `cancel`); the webhook endpoint is `/api/razorpay/webhook`. The configured
+`RAZORPAY_PRO_PLAN_ID` is authoritative, and a conflicting `planId` in a
+checkout request is rejected. Subscription activation and recurring quota
+resets are applied from verified webhooks.
+
+The schema includes chat, billing, and Razorpay webhook-idempotency tables.
+Generate future schema changes with `pnpm db:generate` and apply the checked-in
+migrations to the intended database with `pnpm db:migrate` before using these
+endpoints. Do not mix test and live database credentials.
+
 ## Learn More
 
 To learn more about Next.js, take a look at the following resources:

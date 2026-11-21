@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import Lumina from '@/components/home/icon';
+import Lumina from '@/components/icon';
 
 interface ResetPasswordProps {
 	token?: string;
@@ -55,22 +55,22 @@ export default function ResetPassword({ onSubmit }: ResetPasswordProps) {
 	};
 
 	return (
-		<div className="min-h-screen w-full flex items-center justify-center bg-[#09090b] text-zinc-100 px-4 relative overflow-hidden select-none">
+		<div className="min-h-screen w-full flex items-center justify-center bg-background text-foreground px-4 relative overflow-hidden select-none">
 			{/* Background Ambient Glows */}
 			<div className="absolute -top-32 -right-32 w-96 h-96 bg-zinc-800/10 rounded-full blur-3xl pointer-events-none" />
-			<div className="absolute -bottom-32 -left-32 w-96 h-96 bg-zinc-900/20 rounded-full blur-3xl pointer-events-none" />
+			<div className="absolute -bottom-32 -left-32 w-96 h-96 bg-muted/50 rounded-full blur-3xl pointer-events-none" />
 
-			<div className="relative w-full max-w-md bg-zinc-950 border border-zinc-800 rounded-3xl p-8 shadow-2xl backdrop-blur-2xl">
+			<div className="relative w-full max-w-md bg-card border border-border rounded-3xl p-8 shadow-2xl backdrop-blur-2xl">
 				{/* Header Brand */}
 				<div className="flex flex-col items-center text-center mb-8">
 					<Lumina
 						size="lg"
 						className="mb-3"
 					/>
-					<h1 className="text-2xl font-bold tracking-tight text-white">
+					<h1 className="text-2xl font-bold tracking-tight text-foreground dark:text-white">
 						{success ? 'Password updated' : 'Set new password'}
 					</h1>
-					<p className="text-xs text-zinc-400 mt-1 max-w-xs">
+					<p className="text-xs text-muted-foreground mt-1 max-w-xs">
 						{success
 							? 'Your password has been reset. You can now sign in with your new credentials.'
 							: 'Your new password must be different from previously used passwords'}
@@ -79,9 +79,9 @@ export default function ResetPassword({ onSubmit }: ResetPasswordProps) {
 
 				{success ? (
 					<div className="space-y-6">
-						<div className="flex flex-col items-center justify-center p-4 rounded-2xl bg-zinc-900/80 border border-zinc-800 text-center space-y-2">
-							<CheckCircle2 className="h-8 w-8 text-white" />
-							<p className="text-xs text-zinc-300">
+						<div className="flex flex-col items-center justify-center p-4 rounded-2xl bg-muted/70 border border-border text-center space-y-2">
+							<CheckCircle2 className="h-8 w-8 text-foreground dark:text-white" />
+							<p className="text-xs text-foreground/80">
 								Security credentials updated successfully.
 							</p>
 						</div>
@@ -101,11 +101,11 @@ export default function ResetPassword({ onSubmit }: ResetPasswordProps) {
 						className="space-y-4"
 					>
 						<div>
-							<label className="block text-xs font-medium text-zinc-300 mb-1.5">
+							<label className="block text-xs font-medium text-foreground/80 mb-1.5">
 								New Password
 							</label>
 							<div className="relative">
-								<Lock className="absolute left-3.5 top-3 h-4 w-4 text-zinc-500" />
+								<Lock className="absolute left-3.5 top-3 h-4 w-4 text-muted-foreground" />
 								<input
 									type={showPassword ? 'text' : 'password'}
 									required
@@ -113,12 +113,12 @@ export default function ResetPassword({ onSubmit }: ResetPasswordProps) {
 									value={password}
 									onChange={(e) => setPassword(e.target.value)}
 									placeholder="At least 8 characters"
-									className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3.5 py-2.5 pl-10 pr-10 text-xs sm:text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-white focus:ring-1 focus:ring-white/40 transition-all"
+									className="w-full bg-background/70 border border-border rounded-xl px-3.5 py-2.5 pl-10 pr-10 text-xs sm:text-sm text-foreground dark:text-white placeholder:text-muted-foreground focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 transition-all"
 								/>
 								<button
 									type="button"
 									onClick={() => setShowPassword(!showPassword)}
-									className="absolute right-3.5 top-3 text-zinc-500 hover:text-zinc-300 transition-colors cursor-pointer"
+									className="absolute right-3.5 top-3 text-muted-foreground hover:text-foreground/80 transition-colors cursor-pointer"
 									aria-label={showPassword ? 'Hide password' : 'Show password'}
 								>
 									{showPassword ? (
@@ -131,11 +131,11 @@ export default function ResetPassword({ onSubmit }: ResetPasswordProps) {
 						</div>
 
 						<div>
-							<label className="block text-xs font-medium text-zinc-300 mb-1.5">
+							<label className="block text-xs font-medium text-foreground/80 mb-1.5">
 								Confirm New Password
 							</label>
 							<div className="relative">
-								<Lock className="absolute left-3.5 top-3 h-4 w-4 text-zinc-500" />
+								<Lock className="absolute left-3.5 top-3 h-4 w-4 text-muted-foreground" />
 								<input
 									type={showPassword ? 'text' : 'password'}
 									required
@@ -143,7 +143,7 @@ export default function ResetPassword({ onSubmit }: ResetPasswordProps) {
 									value={confirmPassword}
 									onChange={(e) => setConfirmPassword(e.target.value)}
 									placeholder="Repeat new password"
-									className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3.5 py-2.5 pl-10 text-xs sm:text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-white focus:ring-1 focus:ring-white/40 transition-all"
+									className="w-full bg-background/70 border border-border rounded-xl px-3.5 py-2.5 pl-10 text-xs sm:text-sm text-foreground dark:text-white placeholder:text-muted-foreground focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 transition-all"
 								/>
 							</div>
 						</div>
@@ -174,7 +174,7 @@ export default function ResetPassword({ onSubmit }: ResetPasswordProps) {
 					<div className="text-center mt-6">
 						<Link
 							href="/sign-in"
-							className="inline-flex items-center gap-1.5 text-xs text-zinc-400 hover:text-white font-medium transition-colors"
+							className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground dark:text-white font-medium transition-colors"
 						>
 							<ArrowLeft className="h-3.5 w-3.5" />
 							<span>Back to sign in</span>

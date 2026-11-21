@@ -4,35 +4,24 @@ import ApiResponse from '@/utils/apiResponse';
 import { cookies } from 'next/headers';
 
 export const POST = async () => {
+	const cookieStore = await cookies();
 	try {
-		const cookieStore = await cookies();
-		const cookieObject = cookieStore.get('refreshToken');
-
-		const currentRefreshToken = cookieObject?.value;
-
-		if (!currentRefreshToken) {
-			throw ApiError.unauthorized('Invalid or expired token');
+		const refreshToken = cookieStore.get('refreshToken')?.value;
+		if (!refreshToken) {
+			throw ApiError.unauthorized('Missing refresh token cookie');
 		}
 
-		const { accessToken, user } = await refreshService(currentRefreshToken);
-
-		if (!user) {
-			throw ApiError.notFound('User not found');
-		}
-
-		if (!user.refreshToken) {
-			throw ApiError.internal('Missing refresh token from user data');
-		}
-
-		const { refreshToken, ...safeUser } = user;
-		cookieStore.set('refreshToken', refreshToken, cookieOptions);
+		const result = await refreshService(refreshToken);
+		cookieStore.set('refreshToken', result.refreshToken, cookieOptions);
 
 		return ApiResponse.ok('Token refreshed successfully', {
-			accessToken,
-			user: safeUser,
+			accessToken: result.accessToken,
+			user: result.user,
 		});
 	} catch (error) {
+		if (error instanceof ApiError && error.statusCode === 401) {
+			cookieStore.delete({ name: 'refreshToken', path: '/' });
+		}
 		return handleApiError(error);
 	}
 };
-

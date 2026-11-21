@@ -2,6 +2,7 @@ import {
 	getGoogleOAuthConfig,
 	googleOAuthStateCookie,
 } from '@/features/auth/services/google-oauth';
+import { cookieOptions } from '@/features/auth/services/auth.service';
 import { createSocialSession } from '@/features/auth/services/social-auth.service';
 import { timingSafeEqual } from 'node:crypto';
 import axios from 'axios';
@@ -102,7 +103,7 @@ export const GET = async (request: NextRequest) => {
 		}
 
 		const profile = await getProfile(tokenResult.access_token);
-		const user = await createSocialSession({
+		const socialSession = await createSocialSession({
 			authId: profile.sub,
 			email: profile.email,
 			firstName: profile.givenName || profile.email.split('@')[0] || 'User',
@@ -113,12 +114,11 @@ export const GET = async (request: NextRequest) => {
 		);
 
 		response.cookies.delete(googleOAuthStateCookie);
-		response.cookies.set('refreshToken', user.refreshToken, {
-			httpOnly: true,
-			secure: process.env.NODE_ENV === 'production',
-			sameSite: 'lax',
-			path: '/',
-		});
+		response.cookies.set(
+			'refreshToken',
+			socialSession.refreshToken,
+			cookieOptions,
+		);
 
 		return response;
 	} catch (error) {

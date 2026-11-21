@@ -3,10 +3,11 @@ import { usersTable } from '@/db/auth.schema';
 import ApiError, { handleApiError } from '@/utils/apiError';
 import {
 	type tokenPayload,
+	hashRefreshToken,
 	verifyAccessToken,
 	verifyRefreshToken,
 } from '@/utils/token';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, or } from 'drizzle-orm';
 import type { NextRequest } from 'next/server';
 
 type NextRouteContext<T> = {
@@ -57,7 +58,10 @@ export const hasAuthenticatedSession = async (
 		.where(
 			and(
 				eq(usersTable.id, decoded.id),
-				eq(usersTable.refreshToken, refreshToken),
+				or(
+					eq(usersTable.refreshToken, hashRefreshToken(refreshToken)),
+					eq(usersTable.refreshToken, refreshToken),
+				),
 			),
 		)
 		.limit(1);
@@ -72,7 +76,7 @@ export const authenticate = <T>(handler: AuthenticatedHandler<T>) => {
 
 			if (!header || !header.startsWith('Bearer ')) {
 				return handleApiError(
-					ApiError.notFound('Invalid or missing authorization header'),
+					ApiError.unauthorized('Invalid or missing authorization header'),
 				);
 			}
 
@@ -80,11 +84,11 @@ export const authenticate = <T>(handler: AuthenticatedHandler<T>) => {
 			const token = tokenParts[1];
 			if (!token) {
 				return handleApiError(
-					ApiError.notFound('Not authorized for the action'),
+					ApiError.unauthorized('Not authorized for the action'),
 				);
 			}
 
-			const decoded = (await verifyAccessToken(token)) as tokenPayload;
+			const decoded = await verifyAccessToken(token);
 
 			const db = getDb();
 
@@ -108,8 +112,15 @@ export const authenticate = <T>(handler: AuthenticatedHandler<T>) => {
 				},
 			});
 		} catch (error) {
-			console.log('Middleware error : ', error);
-			return handleApiError(ApiError.unauthorized('Invalid or expired token'));
+			if (
+				error instanceof Error &&
+				['JsonWebTokenError', 'TokenExpiredError', 'NotBeforeError'].includes(
+					error.name,
+				)
+			) {
+				return handleApiError(ApiError.unauthorized('Invalid or expired token'));
+			}
+			return handleApiError(error);
 		}
 	};
 };

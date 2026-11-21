@@ -7,6 +7,7 @@ import {
 } from 'next/font/google';
 import QueryProvider from '@/components/providers/queryProvider';
 import './globals.css';
+import { ThemeProvider } from '@/components/theme-provider';
 
 const jakartaSans = Plus_Jakarta_Sans({
 	variable: '--font-jakarta',
@@ -44,10 +45,17 @@ export default function RootLayout({
 		<html
 			lang="en"
 			suppressHydrationWarning
-			className={`${jakartaSans.variable} ${poppins.variable} ${geistSans.variable} ${geistMono.variable} h-full antialiased dark`}
+			className={`${jakartaSans.variable} ${poppins.variable} ${geistSans.variable} ${geistMono.variable} h-full antialiased`}
 		>
 			<body className="min-h-full flex flex-col font-sans bg-background text-foreground">
-				<QueryProvider>{children}</QueryProvider>
+				<ThemeProvider
+					attribute="class"
+					defaultTheme="dark"
+					enableSystem
+					disableTransitionOnChange
+				>
+					<QueryProvider>{children}</QueryProvider>
+				</ThemeProvider>
 			</body>
 		</html>
 	);

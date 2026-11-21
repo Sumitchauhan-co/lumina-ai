@@ -3,6 +3,7 @@ import {
 	getGitHubOAuthConfig,
 	githubOAuthStateCookie,
 } from '@/features/auth/services/github-oauth';
+import { cookieOptions } from '@/features/auth/services/auth.service';
 import { timingSafeEqual } from 'node:crypto';
 import axios from 'axios';
 import { NextResponse, type NextRequest } from 'next/server';
@@ -152,7 +153,7 @@ export const GET = async (request: NextRequest) => {
 		}
 
 		const profile = await getGitHubProfile(tokenResult.access_token);
-		const user = await createSocialSession({
+		const socialSession = await createSocialSession({
 			authId: `github:${profile.id}`,
 			email: profile.email,
 			firstName: profile.firstName,
@@ -163,12 +164,11 @@ export const GET = async (request: NextRequest) => {
 		);
 
 		response.cookies.delete(githubOAuthStateCookie);
-		response.cookies.set('refreshToken', user.refreshToken, {
-			httpOnly: true,
-			secure: process.env.NODE_ENV === 'production',
-			sameSite: 'lax',
-			path: '/',
-		});
+		response.cookies.set(
+			'refreshToken',
+			socialSession.refreshToken,
+			cookieOptions,
+		);
 
 		return response;
 	} catch (error) {

@@ -2,19 +2,17 @@
 
 import React, { useState } from 'react';
 import { Mail, Lock, ArrowRight, Loader2 } from 'lucide-react';
-import Lumina from '@/components/home/icon';
+import Lumina from '@/components/icon';
 import { useRouter } from 'next/navigation';
 import api from '@/utils/api';
-import { useAuthStore } from '@/store/store';
+import {
+	type SubscriptionDetails,
+	type UserProfile,
+	useAuthStore,
+} from '@/store/store';
 import axios from 'axios';
 
-interface AuthUser {
-	planType?: 'free' | 'pro';
-	passStatus?: 'inactive' | 'active' | 'expired';
-	monthlyTokenAllowance?: number;
-	tokensUsedThisMonth?: number;
-	tokensUsedToday?: number;
-}
+type AuthUser = UserProfile & SubscriptionDetails;
 
 export default function SignIn() {
 	const router = useRouter();
@@ -38,13 +36,12 @@ export default function SignIn() {
 			}>('/api/auth/signin', { email, password });
 			const { accessToken, user } = response.data.data;
 
-			setAuthenticated(true, accessToken);
+			setAuthenticated(true, accessToken, user);
 			setSubscriptionDetails({
 				planType: user.planType ?? 'free',
 				passStatus: user.passStatus ?? 'inactive',
 				monthlyTokenAllowance: user.monthlyTokenAllowance,
 				tokensUsedThisMonth: user.tokensUsedThisMonth,
-				tokensUsedToday: user.tokensUsedToday,
 			});
 			router.replace('/');
 		} catch (error) {
@@ -60,22 +57,22 @@ export default function SignIn() {
 	};
 
 	return (
-		<div className="min-h-screen w-full flex items-center justify-center bg-[#09090b] text-zinc-100 px-4 relative overflow-hidden select-none">
+		<div className="min-h-screen w-full flex items-center justify-center bg-background text-foreground px-4 relative overflow-hidden select-none">
 			{/* Background Ambient Glows */}
 			<div className="absolute -top-32 -left-32 w-96 h-96 bg-zinc-800/10 rounded-full blur-3xl pointer-events-none" />
-			<div className="absolute -bottom-32 -right-32 w-96 h-96 bg-zinc-900/20 rounded-full blur-3xl pointer-events-none" />
+			<div className="absolute -bottom-32 -right-32 w-96 h-96 bg-muted/50 rounded-full blur-3xl pointer-events-none" />
 
-			<div className="relative w-full max-w-md bg-zinc-950 border border-zinc-800 rounded-3xl p-8 shadow-2xl backdrop-blur-2xl">
+			<div className="relative w-full max-w-md bg-card border border-border rounded-3xl p-8 shadow-2xl backdrop-blur-2xl">
 				{/* Header Brand */}
 				<div className="flex flex-col items-center text-center mb-8">
 					<Lumina
 						size="lg"
 						className="mb-3"
 					/>
-					<h1 className="text-2xl font-bold tracking-tight text-white">
+					<h1 className="text-2xl font-bold tracking-tight text-foreground dark:text-white">
 						Welcome back to Lumina
 					</h1>
-					<p className="text-xs text-zinc-400 mt-1">
+					<p className="text-xs text-muted-foreground mt-1">
 						Sign in to your multi-LLM AI workspace
 					</p>
 				</div>
@@ -84,7 +81,7 @@ export default function SignIn() {
 				<div className="grid grid-cols-2 gap-3 mb-6">
 					<a
 						href="/api/auth/github"
-						className="flex items-center justify-center gap-2.5 py-2.5 px-4 rounded-xl bg-white text-zinc-950 font-semibold text-xs shadow-sm hover:bg-zinc-200 active:scale-[0.98] transition-all"
+						className="flex items-center justify-center gap-2.5 py-2.5 px-4 rounded-xl bg-foreground text-background dark:bg-white dark:text-zinc-950 font-semibold text-xs shadow-sm hover:bg-foreground/90 dark:hover:bg-zinc-200 active:scale-[0.98] transition-all"
 					>
 						<svg
 							className="h-4 w-4 fill-current"
@@ -97,7 +94,7 @@ export default function SignIn() {
 
 					<a
 						href="/api/auth/google"
-						className="flex items-center justify-center gap-2.5 py-2.5 px-4 rounded-xl bg-white text-zinc-950 font-semibold text-xs shadow-sm hover:bg-zinc-200 active:scale-[0.98] transition-all"
+						className="flex items-center justify-center gap-2.5 py-2.5 px-4 rounded-xl bg-foreground text-background dark:bg-white dark:text-zinc-950 font-semibold text-xs shadow-sm hover:bg-foreground/90 dark:hover:bg-zinc-200 active:scale-[0.98] transition-all"
 					>
 						<svg
 							className="h-4 w-4"
@@ -126,9 +123,9 @@ export default function SignIn() {
 
 				<div className="relative flex items-center justify-center mb-6">
 					<div className="absolute inset-0 flex items-center">
-						<div className="w-full border-t border-zinc-800" />
+						<div className="w-full border-t border-border" />
 					</div>
-					<span className="relative px-3 bg-zinc-950 text-[11px] font-medium text-zinc-500 uppercase tracking-widest">
+					<span className="relative px-3 bg-card text-[11px] font-medium text-muted-foreground uppercase tracking-widest">
 						or continue with email
 					</span>
 				</div>
@@ -147,44 +144,44 @@ export default function SignIn() {
 						</p>
 					)}
 					<div>
-						<label className="block text-xs font-medium text-zinc-300 mb-1.5">
+						<label className="block text-xs font-medium text-foreground/80 mb-1.5">
 							Email Address
 						</label>
 						<div className="relative">
-							<Mail className="absolute left-3.5 top-3 h-4 w-4 text-zinc-500" />
+							<Mail className="absolute left-3.5 top-3 h-4 w-4 text-muted-foreground" />
 							<input
 								type="email"
 								required
 								value={email}
 								onChange={(e) => setEmail(e.target.value)}
 								placeholder="example@gmail.com"
-								className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3.5 py-2.5 pl-10 text-xs sm:text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-white focus:ring-1 focus:ring-white/40 transition-all"
+								className="w-full bg-background/70 border border-border rounded-xl px-3.5 py-2.5 pl-10 text-xs sm:text-sm text-foreground dark:text-white placeholder:text-muted-foreground focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 transition-all"
 							/>
 						</div>
 					</div>
 
 					<div>
 						<div className="flex items-center justify-between mb-1.5">
-							<label className="block text-xs font-medium text-zinc-300">
+							<label className="block text-xs font-medium text-foreground/80">
 								Password
 							</label>
 							<button
 								type="button"
 								onClick={() => router.push('/forgot-password')}
-								className="text-xs text-zinc-400 hover:text-white transition-colors cursor-pointer"
+								className="text-xs text-muted-foreground hover:text-foreground dark:text-white transition-colors cursor-pointer"
 							>
 								Forgot password?
 							</button>
 						</div>
 						<div className="relative">
-							<Lock className="absolute left-3.5 top-3 h-4 w-4 text-zinc-500" />
+							<Lock className="absolute left-3.5 top-3 h-4 w-4 text-muted-foreground" />
 							<input
 								type="password"
 								required
 								value={password}
 								onChange={(e) => setPassword(e.target.value)}
 								placeholder="••••••••••••"
-								className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3.5 py-2.5 pl-10 text-xs sm:text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-white focus:ring-1 focus:ring-white/40 transition-all"
+								className="w-full bg-background/70 border border-border rounded-xl px-3.5 py-2.5 pl-10 text-xs sm:text-sm text-foreground dark:text-white placeholder:text-muted-foreground focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 transition-all"
 							/>
 						</div>
 					</div>
@@ -207,12 +204,12 @@ export default function SignIn() {
 
 				{/* Footer Toggle */}
 				<div className="text-center mt-6">
-					<p className="text-xs text-zinc-400">
+					<p className="text-xs text-muted-foreground">
 						{`Don't have an account? `}
 						<button
 							type="button"
 							onClick={() => router.push('/sign-up')}
-							className="text-white font-semibold hover:underline transition-colors cursor-pointer"
+							className="text-foreground dark:text-white font-semibold hover:underline transition-colors cursor-pointer"
 						>
 							Sign up
 						</button>

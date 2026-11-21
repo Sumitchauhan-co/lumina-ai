@@ -1,17 +1,15 @@
 'use client';
 
 import api from '@/utils/api';
-import { useAuthStore } from '@/store/store';
+import {
+	type SubscriptionDetails,
+	type UserProfile,
+	useAuthStore,
+} from '@/store/store';
 import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 
-interface RefreshedUser {
-	planType: 'free' | 'pro';
-	passStatus: 'inactive' | 'active' | 'expired';
-	monthlyTokenAllowance: number;
-	tokensUsedThisMonth: number;
-	tokensUsedToday: number;
-}
+type RefreshedUser = UserProfile & SubscriptionDetails;
 
 export default function ProtectedLayout({
 	children,
@@ -53,13 +51,12 @@ export default function ProtectedLayout({
 				if (cancelled) return;
 
 				const { accessToken, user } = data.data;
-				setAuthenticated(true, accessToken);
+				setAuthenticated(true, accessToken, user);
 				setSubscriptionDetails({
 					planType: user.planType,
 					passStatus: user.passStatus,
 					monthlyTokenAllowance: user.monthlyTokenAllowance,
 					tokensUsedThisMonth: user.tokensUsedThisMonth,
-					tokensUsedToday: user.tokensUsedToday,
 				});
 				setIsCheckingSession(false);
 			})
@@ -85,7 +82,7 @@ export default function ProtectedLayout({
 		<>
 			<main
 				hidden={!isCheckingSession}
-				className="flex min-h-screen items-center justify-center bg-[#09090b] text-zinc-400"
+				className="flex min-h-screen items-center justify-center bg-background text-muted-foreground"
 				aria-live="polite"
 			>
 				Checking your session…

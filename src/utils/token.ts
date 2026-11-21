@@ -1,51 +1,108 @@
 import bcrypt from 'bcryptjs';
-import crypto from 'crypto';
-import jwt, { SignOptions } from 'jsonwebtoken';
+import { createHash, randomBytes } from 'node:crypto';
+import jwt, { type JwtPayload, type SignOptions } from 'jsonwebtoken';
+
+export type UserRole = 'user' | 'admin' | 'guest';
 
 export interface tokenPayload {
 	id: string;
-	role: 'user' | 'admin' | 'guest';
+	role: UserRole;
 }
 
-export const generateHashPassword = async (userPassowrd: string) => {
-	return bcrypt.hash(userPassowrd, 10);
+const resolveSecret = (
+	primaryName: 'ACCESS_TOKEN_SECRET' | 'REFRESH_TOKEN_SECRET',
+	legacyName: 'JWT_ACCESS_SECRET_TOKEN' | 'JWT_REFRESH_SECRET_TOKEN',
+	developmentFallback: string,
+) => {
+	const secret = process.env[primaryName] || process.env[legacyName];
+	if (secret) return secret;
+
+	if (process.env.NODE_ENV === 'production') {
+		throw new Error(`${primaryName} is required in production`);
+	}
+
+	// Stable local-only fallback keeps development sessions usable across restarts.
+	return developmentFallback;
 };
+
+const getAccessSecret = () =>
+	resolveSecret(
+		'ACCESS_TOKEN_SECRET',
+		'JWT_ACCESS_SECRET_TOKEN',
+		'lumina-local-access-secret-not-for-production',
+	);
+
+const getRefreshSecret = () =>
+	resolveSecret(
+		'REFRESH_TOKEN_SECRET',
+		'JWT_REFRESH_SECRET_TOKEN',
+		'lumina-local-refresh-secret-not-for-production',
+	);
+
+const getExpiry = (
+	primaryName: 'ACCESS_TOKEN_EXPIRY' | 'REFRESH_TOKEN_EXPIRY',
+	legacyName: 'JWT_ACCESS_TOKEN_EXPIRY' | 'JWT_REFRESH_TOKEN_EXPIRY',
+	fallback: '15m' | '7d',
+): SignOptions['expiresIn'] =>
+	(process.env[primaryName] || process.env[legacyName] || fallback) as SignOptions['expiresIn'];
+
+const parseTokenPayload = (
+	decoded: string | JwtPayload,
+): tokenPayload => {
+	if (
+		typeof decoded === 'string' ||
+		typeof decoded.id !== 'string' ||
+		!['user', 'admin', 'guest'].includes(String(decoded.role))
+	) {
+		throw new jwt.JsonWebTokenError('Invalid token payload');
+	}
+
+	return {
+		id: decoded.id,
+		role: decoded.role as UserRole,
+	};
+};
+
+export const generateHashPassword = async (userPassword: string) =>
+	bcrypt.hash(userPassword, 10);
 
 export const compareUserPassword = async (
 	userPassword: string,
 	hashPassword: string,
-) => {
-	return bcrypt.compare(userPassword, hashPassword);
-};
+) => bcrypt.compare(userPassword, hashPassword);
 
-export const generateAccessToken = async (payload: tokenPayload) => {
-	return jwt.sign(payload, process.env.JWT_ACCESS_SECRET_TOKEN!, {
-		expiresIn: (process.env.JWT_ACCESS_TOKEN_EXPIRY ||
-			'15m') as SignOptions['expiresIn'],
+export const generateAccessToken = async (payload: tokenPayload) =>
+	jwt.sign(payload, getAccessSecret(), {
+		expiresIn: getExpiry(
+			'ACCESS_TOKEN_EXPIRY',
+			'JWT_ACCESS_TOKEN_EXPIRY',
+			'15m',
+		),
 	});
-};
 
-export const generateRefreshToken = async (payload: tokenPayload) => {
-	return jwt.sign(payload, process.env.JWT_REFRESH_SECRET_TOKEN!, {
-		expiresIn: (process.env.JWT_REFRESH_TOKEN_EXPIRY ||
-			'1h') as SignOptions['expiresIn'],
+export const generateRefreshToken = async (payload: tokenPayload) =>
+	jwt.sign(payload, getRefreshSecret(), {
+		expiresIn: getExpiry(
+			'REFRESH_TOKEN_EXPIRY',
+			'JWT_REFRESH_TOKEN_EXPIRY',
+			'7d',
+		),
 	});
-};
 
-export const verifyAccessToken = async (token: string) => {
-	return jwt.verify(token, process.env.JWT_ACCESS_SECRET_TOKEN!);
-};
+export const verifyAccessToken = async (token: string): Promise<tokenPayload> =>
+	parseTokenPayload(jwt.verify(token, getAccessSecret()));
 
-export const verifyRefreshToken = async (token: string) => {
-	return jwt.verify(token, process.env.JWT_REFRESH_SECRET_TOKEN!);
-};
+export const verifyRefreshToken = async (token: string): Promise<tokenPayload> =>
+	parseTokenPayload(jwt.verify(token, getRefreshSecret()));
 
 export const generateToken = async () => {
-	const token = crypto.randomBytes(32).toString('hex');
-	const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
-	return { token, hashedToken };
+	const token = randomBytes(32).toString('hex');
+	return { token, hashedToken: hashToken(token) };
 };
 
-export const generateHashedToken = async (token: string) => {
-	return crypto.createHash('sha256').update(token).digest('hex');
-};
+export const hashToken = (token: string) =>
+	createHash('sha256').update(token).digest('hex');
+
+export const generateHashedToken = async (token: string) => hashToken(token);
+
+export const hashRefreshToken = (token: string) => hashToken(token);
